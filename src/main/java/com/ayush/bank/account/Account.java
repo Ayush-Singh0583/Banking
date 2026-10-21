@@ -34,8 +34,8 @@ public class Account {
 }
     public String getOwnerName(){
         return ownerName;
-    };
+    }
     public BigDecimal getBalance(){
         return balance;
-    };
+}
 }

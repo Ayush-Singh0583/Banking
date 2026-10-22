@@ -69,14 +69,16 @@ An account that doesn't exist should give 404 Not Found. Right now it gives 500,
 - (22 Oct) I thought invalid input reaches my code as a runtime exception → with `@Valid`, Spring answers 400 before my code runs.
 - (22 Oct) I thought a missing account returns 400 → it returns 500 right now (nothing handles it). It should be 404.
 
-## Next
-- `AccountNotFoundException` (extends `RuntimeException`) thrown from `AccountService.getForUpdate`, plus a handler → 404 instead of 500
-- Reject a transfer to the same account (`fromId == toId`)
-- Also check `amount > 0` inside `TransferService`, not just in the DTO, in case something other than the controller calls it
-- Tests: a unit test for `TransferService` (with a fake `AccountService`) and a test that two transfers at the same time can't overspend
-- `customer` module (replace `ownerName` with a real Customer)
-- Idempotency key: a unique column so a double-tap doesn't charge twice
-- Double-entry ledger table
-- Dockerfile
-- JWT / Spring Security
-- Swagger
+## Next (before the interview on 29 Oct, most interview value first)
+1. **Fix the bugs from the code review:**
+   - **Paisa bug:** `scale = 2` rounds silently, and `@Positive` allows ₹0.005. First check it with `curl ... "amount":0.005` and look in the H2 console. Fix: `@Digits(integer = 17, fraction = 2)` on `amount`.
+   - **Same-account transfer:** `transfer(1, 1, 100)` returns 200. Reject `fromId == toId`.
+   - **`debit()` / `credit()` check nothing:** make them reject amounts ≤ 0, so no caller can skip the check.
+   - `AccountNotFoundException` (extends `RuntimeException`) + a handler → 404 instead of 500.
+   - Move `GlobalExceptionHandler` from `transaction/` to a shared `common/` package, because it handles errors for every module.
+2. **Prove the lock works:** fire 20 × ₹100 transfers at once against ₹1000. Expect exactly ten 200s and ten 409s, with Ayush at 0.00 and Riya at 1500.00. Then swap `findByIdForUpdate` for `findById`, run it again, and watch money appear. Then turn it into a JUnit test.
+3. Idempotency key: a unique column so a double-tap doesn't charge twice.
+4. PostgreSQL in Docker Compose, plus a Dockerfile.
+5. Double-entry ledger table, then Swagger.
+6. JWT / Spring Security, last because it's the hardest. **If it isn't working by 28 Oct, remove it from the resume.**
+- Later: `customer` module (replace `ownerName`), and a unit test for `TransferService` with a fake `AccountService`.

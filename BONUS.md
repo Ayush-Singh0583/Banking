@@ -10,12 +10,13 @@ Short extra points from the lessons. Each one is the kind of thing an interviewe
 - **Trap: `equals` vs `compareTo`.** `new BigDecimal("2.0").equals(new BigDecimal("2.00"))` is **false**, because `equals` also checks the number of decimal places. Use **`a.compareTo(b) == 0`**.
 - **Trap: BigDecimal can't be changed in place.** `balance.subtract(amount);` on its own does **nothing**. It returns a *new* number, so you must assign it back: `balance = balance.subtract(amount);`
 - You can't use `+` or `-` with BigDecimal. Use `.add()` and `.subtract()`.
+- **Trap: `scale = 2` rounds silently.** `@Positive` still allows ₹0.005. Ayush 999.995 is saved as 1000.00, and Riya 500.005 is saved as 500.01, so 1 paisa is created from nothing. *(From the code review. Check it yourself with curl first.)* Fix: `@Digits(integer = 17, fraction = 2)` on the DTO's `amount`.
 
 ## The Account entity
 - **`Long id`, not `int`:** `null` clearly means "not saved yet" (0 looks like a real id), and `int` runs out at about 2.1 billion.
   - *Correction from a lesson:* Spring Data *does* treat `0` as "new" for an `int` id. Don't claim that `int` breaks it.
 - **`protected Account() {}`:** JPA needs an empty constructor to build objects from table rows. `protected` stops other code from creating an account with no name and no balance.
-- **No `setBalance()`:** otherwise any code could set any balance (₹1000 billion, a negative number...). The balance only changes through `debit()` and `credit()`, which can check rules.
+- **No `setBalance()`:** otherwise any code could set any balance (₹1000 billion, a negative number...). The balance only changes through `debit()` and `credit()`, the one place where rules *should* be checked. **v1 gap:** they don't check anything yet, so `debit(-500)` works for any caller that skips the DTO. Next step: make them reject amounts ≤ 0.
 
 ## Java gotchas
 - **Trap: `==` on `Long`.** `Long` values are *objects*, so `==` checks "same object?", not "same number?". It happens to work for small numbers (-128 to 127) and **breaks above 127**. Use `.equals()`.
@@ -93,7 +94,7 @@ Short extra points from the lessons. Each one is the kind of thing an interviewe
   - **500** = the server broke, so a 500 for a *client* mistake is a bug
 - **Currently a known gap:** a transfer to an account that doesn't exist returns **500**, because nothing handles that exception. The fix is an `AccountNotFoundException` plus a handler → **404**.
 - **Where does the 409 message come from?** `throw new InsufficientBalanceException("...")` → `super(message)` → `e.getMessage()` in the handler → the response body.
-- **`curl -i`** shows the status code and headers. `Content-Length: 19` is the size of the body in characters, so `Transfer successful` is 19.
+- **`curl -i`** shows the status code and headers. `Content-Length` is the size of the body in **bytes**, not characters. `Transfer successful` is 19 of both, but `₹` alone is 3 bytes.
 - **VS Code tip:** if a suggestion list pops up while you're typing an annotation, press **Esc**. Pressing Enter can insert a whole snippet method.
 
 ## Test data and the H2 console

@@ -4,6 +4,9 @@
 - `account/Account.java`: entity for the `account` table: `Long id`, `ownerName`, `BigDecimal balance` (precision 19, scale 2). Getters only, no setters.
 - `account/AccountRepository.java`: Spring Data repository with `findByIdForUpdate(id)`, which uses `@Lock(PESSIMISTIC_WRITE)` and runs `SELECT ... FOR UPDATE`.
 - One Spring Boot app with one H2 database, and packages grouped by feature (a modular monolith).
+- (22 Oct) `account/AccountService.java`: the account module's public door. `getForUpdate(id)` returns a locked account.
+- (22 Oct) `transaction/TransferService.java`: `@Transactional transfer(fromId, toId, amount)`. Locks the smaller id first, checks the balance, then debits and credits.
+- (22 Oct) `transaction/InsufficientBalanceException.java`: extends `RuntimeException` so Spring rolls back.
 
 ## What I learned (in my own words)
 
@@ -33,6 +36,12 @@ It stops another transaction from locking or changing the same row until the tra
 ### Modular monolith
 The code is grouped by feature (account and transaction now, customer and auth later), but it's still one app with one database, so a transfer can run inside one transaction. A module only calls another module's Service, never its Repository. It's like asking the teller instead of walking into the vault: the account rules live in one place, and no other module can skip them.
 
+### @Transactional (Module 3)
+The code runs line by line, but the database only keeps the changes if the whole method finishes. If a RuntimeException escapes, everything is rolled back. Example: if the power goes out right after `debit()`, the balance is still ₹100 because nothing was committed. A checked exception still commits by default, which is why `InsufficientBalanceException` extends `RuntimeException`.
+`@Transactional` works through a proxy. If a method calls `transfer()` from the same class, it skips the proxy, so there's no transaction. Fix: put `@Transactional` on the outer method, or call `transfer()` from another bean.
+Deadlock: always lock the smaller id first, so two transfers never end up waiting on each other in a circle.
+Inside one module, the service uses its own repository. Only other modules have to go through the service.
+
 ## Mistakes I made (21 Oct)
 - I used `int id` → `Long` is better (`null` means not saved yet, and there's no 2.1 billion limit).
 - I wrote `Protected final Account()` → Java keywords are lowercase, and a constructor can't be `final`. The fix is `protected Account() {}`.
@@ -41,8 +50,10 @@ The code is grouped by feature (account and transaction now, customer and auth l
 - I thought a test had to extend some JPA class → it's just `new AccountService(fakeRepo)`.
 - I didn't know why `TransferService` can't use `AccountRepository` directly → because of module boundaries: it has to go through `AccountService`.
 
+- (22 Oct) I thought a service exists so we don't use the repository → the service *does* use its own repository; only *other* modules must go through the service.
+- (22 Oct) I didn't know `Math.min` / `Math.max` exist → for library methods, look them up.
+
 ## Next
-- Module 3: `TransferService.transfer()` with `@Transactional`: lock the smaller id first, `InsufficientBalanceException extends RuntimeException`, debit and credit in one transaction, plus `AccountService.getForUpdate()` and `Account.debit()`/`credit()`
 - Module 4: `POST /transfers` + request DTO + validation + `@RestControllerAdvice`, tested with curl (including the insufficient-balance case)
 - `customer` module (replace `ownerName` with a real Customer)
 - Idempotency key: a unique column so a double-tap doesn't charge twice

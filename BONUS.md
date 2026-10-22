@@ -82,6 +82,24 @@ Short extra points from the lessons. Each one is the kind of thing an interviewe
 - **`@Valid`** on the controller parameter checks annotations like `@NotNull` and `@Positive`. Bad input gets a **400** before your code even runs.
 - **Security hole:** without `@Positive`, `transfer(1, 2, -500)` passes the balance check, *adds* ₹500 to the sender and *takes* ₹500 from the receiver. That's theft.
 - **`@RestControllerAdvice`:** one class that turns exceptions from every controller into clean HTTP responses instead of an ugly 500.
+- **Trap: `@Controller` vs `@RestController`.** `@Controller` is for websites that return HTML pages: return a plain `String` and Spring looks for a page with that name. `@RestController` sends your data straight back.
+- **Trap: forgetting `@Valid`.** Without it, `@NotNull` and `@Positive` are silently **ignored**. Remove it, and a hacker can send `-500` with curl: Ayush 750 → **1250**, Riya 750 → **250**.
+- **Never trust the client.** "The mobile app already checks it" doesn't count, because anyone can skip the app and call your API directly with curl. Always validate on the server.
+- **Status codes:**
+  - **200** = OK
+  - **400** = your input is wrong (failed validation)
+  - **404** = that thing doesn't exist
+  - **409** = valid request, but it conflicts with the current state (balance too low)
+  - **500** = the server broke, so a 500 for a *client* mistake is a bug
+- **Currently a known gap:** a transfer to an account that doesn't exist returns **500**, because nothing handles that exception. The fix is an `AccountNotFoundException` plus a handler → **404**.
+- **Where does the 409 message come from?** `throw new InsufficientBalanceException("...")` → `super(message)` → `e.getMessage()` in the handler → the response body.
+- **`curl -i`** shows the status code and headers. `Content-Length: 19` is the size of the body in characters, so `Transfer successful` is 19.
+- **VS Code tip:** if a suggestion list pops up while you're typing an annotation, press **Esc**. Pressing Enter can insert a whole snippet method.
+
+## Test data and the H2 console
+- `src/main/resources/data.sql` runs on every start. Because H2 is in memory, the data resets each time.
+- `spring.jpa.defer-datasource-initialization=true` makes `data.sql` run **after** Hibernate creates the tables. Otherwise the INSERTs fail with "table not found".
+- H2 console: `http://localhost:8080/h2-console` → JDBC URL `jdbc:h2:mem:bankdb`, user `sa`, empty password.
 
 ---
 

@@ -7,6 +7,11 @@
 - (22 Oct) `account/AccountService.java`: the account module's public door. `getForUpdate(id)` returns a locked account.
 - (22 Oct) `transaction/TransferService.java`: `@Transactional transfer(fromId, toId, amount)`. Locks the smaller id first, checks the balance, then debits and credits.
 - (22 Oct) `transaction/InsufficientBalanceException.java`: extends `RuntimeException` so Spring rolls back.
+- (22 Oct) `transaction/TransferRequest.java`: record DTO. `@NotNull` ids, `@NotNull @Positive` amount.
+- (22 Oct) `transaction/TransferController.java`: `POST /transfers` with `@Valid @RequestBody`.
+- (22 Oct) `transaction/GlobalExceptionHandler.java`: `@RestControllerAdvice` turns `InsufficientBalanceException` into 409.
+- (22 Oct) `data.sql` creates 2 test accounts (Ayush 1000, Riya 500), and the H2 console is at `/h2-console`.
+- **Tested end to end with curl:** ₹250 → 200 (balances 750 / 750), ₹5000 → 409, −₹500 → 400. The failed requests changed nothing.
 
 ## What I learned (in my own words)
 
@@ -42,6 +47,12 @@ The code runs line by line, but the database only keeps the changes if the whole
 Deadlock: always lock the smaller id first, so two transfers never end up waiting on each other in a circle.
 Inside one module, the service uses its own repository. Only other modules have to go through the service.
 
+### Controller, DTO, validation and errors (Module 4)
+The controller only takes the request and calls the service. The request comes in as a DTO (`TransferRequest`), never as the `Account` entity, so a client can't send their own balance.
+`@Valid` makes Spring check `@NotNull` and `@Positive` before my code runs, and bad input gets a 400. Without `@Valid`, a hacker could skip the app and send −500 with curl: the balance check passes, Ayush goes up to 1250 and Riya goes down to 250. Never trust the client.
+`@RestControllerAdvice` catches my exceptions from every controller and turns them into clean responses: not enough money → 409 with my message.
+An account that doesn't exist should give 404 Not Found. Right now it gives 500, because nothing handles that exception yet.
+
 ## Mistakes I made (21 Oct)
 - I used `int id` → `Long` is better (`null` means not saved yet, and there's no 2.1 billion limit).
 - I wrote `Protected final Account()` → Java keywords are lowercase, and a constructor can't be `final`. The fix is `protected Account() {}`.
@@ -52,9 +63,17 @@ Inside one module, the service uses its own repository. Only other modules have 
 
 - (22 Oct) I thought a service exists so we don't use the repository → the service *does* use its own repository; only *other* modules must go through the service.
 - (22 Oct) I didn't know `Math.min` / `Math.max` exist → for library methods, look them up.
+- (22 Oct) I used `@Controller` → for an API it's `@RestController` (`@Controller` is for HTML pages).
+- (22 Oct) I used `Account`'s getters on the request → the request is a `TransferRequest`, so it's `request.fromId()`, `toId()`, `amount()`.
+- (22 Oct) VS Code inserted a snippet method when I typed `@PostMapping` → press Esc instead of Enter on the suggestion list.
+- (22 Oct) I thought invalid input reaches my code as a runtime exception → with `@Valid`, Spring answers 400 before my code runs.
+- (22 Oct) I thought a missing account returns 400 → it returns 500 right now (nothing handles it). It should be 404.
 
 ## Next
-- Module 4: `POST /transfers` + request DTO + validation + `@RestControllerAdvice`, tested with curl (including the insufficient-balance case)
+- `AccountNotFoundException` (extends `RuntimeException`) thrown from `AccountService.getForUpdate`, plus a handler → 404 instead of 500
+- Reject a transfer to the same account (`fromId == toId`)
+- Also check `amount > 0` inside `TransferService`, not just in the DTO, in case something other than the controller calls it
+- Tests: a unit test for `TransferService` (with a fake `AccountService`) and a test that two transfers at the same time can't overspend
 - `customer` module (replace `ownerName` with a real Customer)
 - Idempotency key: a unique column so a double-tap doesn't charge twice
 - Double-entry ledger table

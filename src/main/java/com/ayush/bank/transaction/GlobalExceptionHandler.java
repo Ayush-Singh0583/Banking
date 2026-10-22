@@ -10,6 +10,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(InsufficientBalanceException.class)
     public ResponseEntity<String> handleInsufficient(InsufficientBalanceException e) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage());   // 409 + your message
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage());   
     }
 }

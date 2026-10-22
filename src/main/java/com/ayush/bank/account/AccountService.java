@@ -13,6 +13,6 @@ public class AccountService {
 
     public Account getForUpdate(Long id) {
         return accountRepository.findByIdForUpdate(id)
-                .orElseThrow(() -> new IllegalArgumentException("Account not found: " + id));
+                .orElseThrow(() -> new AccountNotFoundException("Account not found: " + id));
     }
 }

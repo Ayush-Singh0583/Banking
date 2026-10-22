@@ -10,13 +10,13 @@ Short extra points from the lessons. Each one is the kind of thing an interviewe
 - **Trap: `equals` vs `compareTo`.** `new BigDecimal("2.0").equals(new BigDecimal("2.00"))` is **false**, because `equals` also checks the number of decimal places. Use **`a.compareTo(b) == 0`**.
 - **Trap: BigDecimal can't be changed in place.** `balance.subtract(amount);` on its own does **nothing**. It returns a *new* number, so you must assign it back: `balance = balance.subtract(amount);`
 - You can't use `+` or `-` with BigDecimal. Use `.add()` and `.subtract()`.
-- **Trap: `scale = 2` rounds silently.** `@Positive` still allows ₹0.005. Ayush 999.995 is saved as 1000.00, and Riya 500.005 is saved as 500.01, so 1 paisa is created from nothing. *(From the code review. Check it yourself with curl first.)* Fix: `@Digits(integer = 17, fraction = 2)` on the DTO's `amount`.
+- **Trap: `scale = 2` rounds silently.** `@Positive` still allows ₹0.005. Ayush 999.995 is saved as 1000.00, and Riya 500.005 is saved as 500.01, so 1 paisa is created from nothing. **Seen on my machine (23 Oct):** 200 "successful", then Ayush 1000.00 and Riya 500.01. **Fixed** with `@Digits(integer = 17, fraction = 2)` on the DTO's `amount`, so it's now a 400. This is also why payment apps only accept 2 decimal places: 1 paisa (₹0.01) is the smallest real amount. Banks don't round, they reject.
 
 ## The Account entity
 - **`Long id`, not `int`:** `null` clearly means "not saved yet" (0 looks like a real id), and `int` runs out at about 2.1 billion.
   - *Correction from a lesson:* Spring Data *does* treat `0` as "new" for an `int` id. Don't claim that `int` breaks it.
 - **`protected Account() {}`:** JPA needs an empty constructor to build objects from table rows. `protected` stops other code from creating an account with no name and no balance.
-- **No `setBalance()`:** otherwise any code could set any balance (₹1000 billion, a negative number...). The balance only changes through `debit()` and `credit()`, the one place where rules *should* be checked. **v1 gap:** they don't check anything yet, so `debit(-500)` works for any caller that skips the DTO. Next step: make them reject amounts ≤ 0.
+- **No `setBalance()`:** otherwise any code could set any balance (₹1000 billion, a negative number...). The balance only changes through `debit()` and `credit()`, the one place where rules *should* be checked. **Fixed (23 Oct):** both now reject amounts ≤ 0 themselves. This is **defense in depth** ("2-factor protection"): the DTO guards the API door, and the entity guards itself against callers that skip the API, like a future monthly-fee job.
 
 ## Java gotchas
 - **Trap: `==` on `Long`.** `Long` values are *objects*, so `==` checks "same object?", not "same number?". It happens to work for small numbers (-128 to 127) and **breaks above 127**. Use `.equals()`.
@@ -92,7 +92,15 @@ Short extra points from the lessons. Each one is the kind of thing an interviewe
   - **404** = that thing doesn't exist
   - **409** = valid request, but it conflicts with the current state (balance too low)
   - **500** = the server broke, so a 500 for a *client* mistake is a bug
-- **Currently a known gap:** a transfer to an account that doesn't exist returns **500**, because nothing handles that exception. The fix is an `AccountNotFoundException` plus a handler → **404**.
+- **Fixed (23 Oct):** a missing account used to return **500**, because nothing handled the exception. Now `AccountNotFoundException` plus the account module's own handler → **404**.
+- **400 vs 409 vs 404: what should the client do?**
+  - **400:** fix your request. Sending the same thing again will never work (same-account transfer, ₹0.005).
+  - **404:** check the id, because that thing doesn't exist.
+  - **409:** your request is fine, but the current state blocks it. It *might* work later, for example after a top-up.
+  - **5xx:** our fault, not yours.
+- **Check cheap things before expensive things.** The same-account check runs *before* any lock. Otherwise you lock rows for a request that was nonsense, and `transfer(1, 1, 5000)` would answer "Insufficient balance" instead of the real reason.
+- **One error handler per module, not a shared `common/` one.** A shared handler would have to import exceptions from every module, so the shared package would depend on all of them. With one handler per module, each module owns its errors.
+- **Method names are yours, annotations are Spring's.** `handleNotFound` could be called `banana` and still work, because Spring reads `@ExceptionHandler(...)` and the parameter type. Anything starting with `@` comes from Spring or Java.
 - **Where does the 409 message come from?** `throw new InsufficientBalanceException("...")` → `super(message)` → `e.getMessage()` in the handler → the response body.
 - **`curl -i`** shows the status code and headers. `Content-Length` is the size of the body in **bytes**, not characters. `Transfer successful` is 19 of both, but `₹` alone is 3 bytes.
 - **VS Code tip:** if a suggestion list pops up while you're typing an annotation, press **Esc**. Pressing Enter can insert a whole snippet method.
@@ -107,5 +115,7 @@ Short extra points from the lessons. Each one is the kind of thing an interviewe
 ## Interview lines (say these in your own words)
 - **Modular monolith:** "I chose a modular monolith because a transfer has to debit and credit together. With one database, a single `@Transactional` gives me that. The modules keep the boundaries clean, so I could split it into services later."
 - **Module boundary:** "`TransferService` doesn't ask for `AccountRepository`. It asks `AccountService.getForUpdate(id)` for a locked account, and `AccountService` handles the repository."
+- **Bug story:** "A code review pointed out that my 2-decimal column rounds silently. I reproduced it: a ₹0.005 transfer returned 200 and created 1 paisa. I fixed it with `@Digits`, which is also why payment apps only allow 2 decimals."
+- **Lock story:** "I fired 20 transfers of ₹100 at the same moment against ₹1000. I got exactly 10 successes and 10 × 409, with balances 0 and 1500, so the pessimistic lock prevents overspending."
 - **Honesty:** if the project isn't finished yet, say exactly which parts are done and which are next. Never claim more than you built.
 - **Use your own words**, not AI summaries. Interviewers notice words like "orchestrates" and "deterministic".

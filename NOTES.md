@@ -12,6 +12,13 @@
 - (22 Oct) `transaction/GlobalExceptionHandler.java`: `@RestControllerAdvice` turns `InsufficientBalanceException` into 409.
 - (22 Oct) `data.sql` creates 2 test accounts (Ayush 1000, Riya 500), and the H2 console is at `/h2-console`.
 - **Tested end to end with curl:** ₹250 → 200 (balances 750 / 750), ₹5000 → 409, −₹500 → 400. The failed requests changed nothing.
+- (23 Oct) Fixed 4 bugs from a code review:
+  - ₹0.005 → 400 (`@Digits`)
+  - `debit()`/`credit()` reject amounts ≤ 0
+  - same-account transfer → 400 (`SameAccountTransferException`)
+  - missing account → 404 (`AccountNotFoundException` + the account module's own handler)
+  - `GlobalExceptionHandler` renamed to `TransferExceptionHandler`
+- (23 Oct) **Lock test:** 20 × ₹100 sent at the same moment against ₹1000 → exactly 10 × 200 and 10 × 409, Ayush 0.00, Riya 1500.00. No money created or lost.
 
 ## What I learned (in my own words)
 
@@ -51,7 +58,15 @@ Inside one module, the service uses its own repository. Only other modules have 
 The controller only takes the request and calls the service. The request comes in as a DTO (`TransferRequest`), never as the `Account` entity, so a client can't send their own balance.
 `@Valid` makes Spring check `@NotNull` and `@Positive` before my code runs, and bad input gets a 400. Without `@Valid`, a hacker could skip the app and send −500 with curl: the balance check passes, Ayush goes up to 1250 and Riya goes down to 250. Never trust the client.
 `@RestControllerAdvice` catches my exceptions from every controller and turns them into clean responses: not enough money → 409 with my message.
-An account that doesn't exist should give 404 Not Found. Right now it gives 500, because nothing handles that exception yet.
+An account that doesn't exist should give 404 Not Found. (Fixed on 23 Oct.)
+
+### Bug fixes (23 Oct)
+- **Paisa bug:** the column keeps only 2 decimals, so ₹0.005 was rounded silently. I saw it myself: 200 "successful", then Ayush 1000.00 and Riya 500.01. 1 paisa from nothing. That's why Google Pay only takes up to 2 decimal places. Fix: `@Digits(integer = 17, fraction = 2)`.
+- **2-factor protection:** `debit()` and `credit()` are public, so code that skips the controller (another module, a future job) could pass a bad amount. The DTO protects the API, and the entity protects itself.
+- **Status codes:** they're all errors, but the type tells the developer and the user what went wrong. 400 = your request is wrong, 404 = it doesn't exist, 409 = valid, but the current state (balance) blocks it.
+- **Check cheap things first:** the same-account check is the first line of `transfer()`, before any lock is taken.
+- **Each module handles its own errors:** the account module has its own `@RestControllerAdvice`, so no shared package has to depend on every module.
+- Method names like `handleNotFound` are mine. Spring only reads the annotation (`@ExceptionHandler(...)`).
 
 ## Mistakes I made (21 Oct)
 - I used `int id` → `Long` is better (`null` means not saved yet, and there's no 2.1 billion limit).
@@ -69,14 +84,13 @@ An account that doesn't exist should give 404 Not Found. Right now it gives 500,
 - (22 Oct) I thought invalid input reaches my code as a runtime exception → with `@Valid`, Spring answers 400 before my code runs.
 - (22 Oct) I thought a missing account returns 400 → it returns 500 right now (nothing handles it). It should be 404.
 
+- (23 Oct) I put the same-account check after the locks → cheap checks go first, before any lock.
+- (23 Oct) I used 409 for same-account and 400 for not-found → same-account is 400 (nonsense input), not-found is 404.
+- (23 Oct) I copy-pasted a handler and kept the name `handleInsufficient` → rename copied code so it says what it does.
+
 ## Next (before the interview on 29 Oct, most interview value first)
-1. **Fix the bugs from the code review:**
-   - **Paisa bug:** `scale = 2` rounds silently, and `@Positive` allows ₹0.005. First check it with `curl ... "amount":0.005` and look in the H2 console. Fix: `@Digits(integer = 17, fraction = 2)` on `amount`.
-   - **Same-account transfer:** `transfer(1, 1, 100)` returns 200. Reject `fromId == toId`.
-   - **`debit()` / `credit()` check nothing:** make them reject amounts ≤ 0, so no caller can skip the check.
-   - `AccountNotFoundException` (extends `RuntimeException`) + a handler → 404 instead of 500.
-   - Move `GlobalExceptionHandler` from `transaction/` to a shared `common/` package, because it handles errors for every module.
-2. **Prove the lock works:** fire 20 × ₹100 transfers at once against ₹1000. Expect exactly ten 200s and ten 409s, with Ayush at 0.00 and Riya at 1500.00. Then swap `findByIdForUpdate` for `findById`, run it again, and watch money appear. Then turn it into a JUnit test.
+1. ~~Fix the 4 bugs from the code review~~ ✅ done 23 Oct
+2. **Lock test:** ~~20 × ₹100 at once → 10 × 200, 10 × 409, 0.00 / 1500.00~~ ✅ done 23 Oct. Still to do: swap `findByIdForUpdate` for `findById`, run it again, and watch money appear. Then turn it into a JUnit test.
 3. Idempotency key: a unique column so a double-tap doesn't charge twice.
 4. PostgreSQL in Docker Compose, plus a Dockerfile.
 5. Double-entry ledger table, then Swagger.

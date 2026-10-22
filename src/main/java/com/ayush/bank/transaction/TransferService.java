@@ -19,7 +19,9 @@ public class TransferService {
 
     @Transactional
     public void transfer(Long fromId, Long toId, BigDecimal amount) {
-
+        if(fromId.equals(toId)){
+            throw new SameAccountTransferException("Transfer to Same Account is not Allowed");
+        }
         // Step 1: lock both accounts, SMALLER id first (prevents deadlock)
         Long smallerId = Math.min(fromId, toId);
         Long biggerId  = Math.max(fromId, toId);
@@ -34,6 +36,8 @@ public class TransferService {
         if (from.getBalance().compareTo(amount) < 0) {
             throw new InsufficientBalanceException("Insufficient balance in account " + fromId);
         }
+
+        
 
         // Step 4: move the money
         from.debit(amount);

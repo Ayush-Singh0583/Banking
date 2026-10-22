@@ -28,10 +28,16 @@ public class Account {
         this.balance = balance;
     }
     public void debit(BigDecimal amount) {
-    this.balance = balance.subtract(amount);   // balance minus amount
-}
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+        throw new IllegalArgumentException("Debits requires minimum amount >= 0.01");
+    }
+        this.balance = balance.subtract(amount);   // balance minus amount
+    }
 
     public void credit(BigDecimal amount) {
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+        throw new IllegalArgumentException("credit requires minimum amount >= 0.01");
+        }
         this.balance = balance.add(amount);   // balance plus amount
     }
     // getters only, no setters

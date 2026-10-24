@@ -19,6 +19,7 @@
   - missing account → 404 (`AccountNotFoundException` + the account module's own handler)
   - `GlobalExceptionHandler` renamed to `TransferExceptionHandler`
 - (23 Oct) **Lock test:** 20 × ₹100 sent at the same moment against ₹1000 → exactly 10 × 200 and 10 × 409, Ayush 0.00, Riya 1500.00. No money created or lost.
+- (25 Oct) **Broke the lock on purpose** (`findById` instead of `findByIdForUpdate`): the same test gave **20 × 200**, but only ₹200 moved (Ayush 800, Riya 700). 18 "successful" transfers were lost updates. With the lock back, it's 10 × 200 and 10 × 409 again.
 
 ## What I learned (in my own words)
 
@@ -87,10 +88,11 @@ An account that doesn't exist should give 404 Not Found. (Fixed on 23 Oct.)
 - (23 Oct) I put the same-account check after the locks → cheap checks go first, before any lock.
 - (23 Oct) I used 409 for same-account and 400 for not-found → same-account is 400 (nonsense input), not-found is 404.
 - (23 Oct) I copy-pasted a handler and kept the name `handleInsufficient` → rename copied code so it says what it does.
+- (25 Oct) I read `20 200` from `uniq -c` as "20 × ₹200" → it's *count* then *status code*: 20 responses with status 200.
 
 ## Next (before the interview on 29 Oct, most interview value first)
 1. ~~Fix the 4 bugs from the code review~~ ✅ done 23 Oct
-2. **Lock test:** ~~20 × ₹100 at once → 10 × 200, 10 × 409, 0.00 / 1500.00~~ ✅ done 23 Oct. Still to do: swap `findByIdForUpdate` for `findById`, run it again, and watch money appear. Then turn it into a JUnit test.
+2. **Lock test:** ~~20 × ₹100 at once → 10 × 200, 10 × 409, 0.00 / 1500.00~~ ✅ done 23 Oct. ~~Remove the lock and watch transfers vanish~~ ✅ done 25 Oct (20 × 200, only ₹200 moved). Still to do: turn it into a JUnit test.
 3. Idempotency key: a unique column so a double-tap doesn't charge twice.
 4. PostgreSQL in Docker Compose, plus a Dockerfile.
 5. Double-entry ledger table, then Swagger.

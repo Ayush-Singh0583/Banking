@@ -47,6 +47,8 @@ Short extra points from the lessons. Each one is the kind of thing an interviewe
 ## Pessimistic lock
 - `PESSIMISTIC_WRITE` makes the database run `SELECT ... FOR UPDATE`. That row is locked, and anyone else who tries to lock it **waits**.
 - It's called *pessimistic* because it assumes a clash *will* happen, so it locks first.
+- **Lost update (seen on my machine, 25 Oct):** without the lock, all 20 requests read Ayush = 1000 at the same moment, all passed the balance check, and then overwrote each other. Result: 20 × "Transfer successful", but only ₹200 moved.
+- **Trap: the total can still look right.** Each transfer writes *both* rows from the same old values, so Ayush + Riya still added up to 1500. A "does the total add up?" check would miss this bug. Real-life version: Riya's shop gets 18 "payment successful" messages and ships 18 phones, but only ₹200 arrived.
 - **The lock lasts until the transaction ends.** Without `@Transactional` it's useless, and Hibernate may even refuse to run the query.
 - **Lock vs idempotency key:**
   - Lock: two *different* requests on the same row take turns, so no update is lost.
@@ -103,6 +105,7 @@ Short extra points from the lessons. Each one is the kind of thing an interviewe
 - **Method names are yours, annotations are Spring's.** `handleNotFound` could be called `banana` and still work, because Spring reads `@ExceptionHandler(...)` and the parameter type. Anything starting with `@` comes from Spring or Java.
 - **Where does the 409 message come from?** `throw new InsufficientBalanceException("...")` → `super(message)` → `e.getMessage()` in the handler → the response body.
 - **`curl -i`** shows the status code and headers. `Content-Length` is the size of the body in **bytes**, not characters. `Transfer successful` is 19 of both, but `₹` alone is 3 bytes.
+- **Reading `sort | uniq -c`:** `20 200` means **count** then **value**: 20 responses with status code 200. It's not ₹200.
 - **VS Code tip:** if a suggestion list pops up while you're typing an annotation, press **Esc**. Pressing Enter can insert a whole snippet method.
 
 ## Test data and the H2 console
@@ -116,6 +119,6 @@ Short extra points from the lessons. Each one is the kind of thing an interviewe
 - **Modular monolith:** "I chose a modular monolith because a transfer has to debit and credit together. With one database, a single `@Transactional` gives me that. The modules keep the boundaries clean, so I could split it into services later."
 - **Module boundary:** "`TransferService` doesn't ask for `AccountRepository`. It asks `AccountService.getForUpdate(id)` for a locked account, and `AccountService` handles the repository."
 - **Bug story:** "A code review pointed out that my 2-decimal column rounds silently. I reproduced it: a ₹0.005 transfer returned 200 and created 1 paisa. I fixed it with `@Digits`, which is also why payment apps only allow 2 decimals."
-- **Lock story:** "I fired 20 transfers of ₹100 at the same moment against ₹1000. I got exactly 10 successes and 10 × 409, with balances 0 and 1500, so the pessimistic lock prevents overspending."
+- **Lock story:** "I fired 20 concurrent ₹100 transfers at a ₹1000 account. With the pessimistic lock: 10 succeeded, 10 got 409, and the balances came out at 0 and 1500. Then I removed the lock: all 20 returned 200, but only ₹200 actually moved, because 18 transfers were lost updates. That's exactly the bug the lock prevents."
 - **Honesty:** if the project isn't finished yet, say exactly which parts are done and which are next. Never claim more than you built.
 - **Use your own words**, not AI summaries. Interviewers notice words like "orchestrates" and "deterministic".

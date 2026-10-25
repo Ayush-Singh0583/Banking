@@ -20,6 +20,7 @@
   - `GlobalExceptionHandler` renamed to `TransferExceptionHandler`
 - (23 Oct) **Lock test:** 20 × ₹100 sent at the same moment against ₹1000 → exactly 10 × 200 and 10 × 409, Ayush 0.00, Riya 1500.00. No money created or lost.
 - (25 Oct) **Broke the lock on purpose** (`findById` instead of `findByIdForUpdate`): the same test gave **20 × 200**, but only ₹200 moved (Ayush 800, Riya 700). 18 "successful" transfers were lost updates. With the lock back, it's 10 × 200 and 10 × 409 again.
+- (25 Oct) **`TransferConcurrencyTest` (JUnit):** 20 threads send ₹100 at the same moment, and the test expects 10 succeeded, 10 rejected, 0.00 / 1500.00. It passes with the lock. Without the lock it fails with `expected: 10 but was: 20`. Run it with `./mvnw test`.
 
 ## What I learned (in my own words)
 
@@ -69,6 +70,14 @@ An account that doesn't exist should give 404 Not Found. (Fixed on 23 Oct.)
 - **Each module handles its own errors:** the account module has its own `@RestControllerAdvice`, so no shared package has to depend on every module.
 - Method names like `handleNotFound` are mine. Spring only reads the annotation (`@ExceptionHandler(...)`).
 
+### JUnit concurrency test (25 Oct)
+- `@SpringBootTest` starts the whole app with the database inside the test, so it tests the real lock.
+- `ExecutorService` = a team of worker threads. `CountDownLatch` = a starting gun so they all start at once. `AtomicInteger` = a counter that's safe with many threads.
+- In `assertThat(actual).isEqualTo(expected)`, the value in the brackets is my expected value. If it fails, I get `expected: X but was: Y` plus the line number.
+- I work out the expected values from the rules (₹1000 ÷ ₹100 = 10 succeed, sender 0, receiver 1500), never by copying what the code prints. Otherwise the test would pass on buggy code.
+- A test that can't fail proves nothing, so I broke the lock on purpose and watched it go red.
+- I run `./mvnw test` myself. In real teams, CI (like GitHub Actions) runs it on every push.
+
 ## Mistakes I made (21 Oct)
 - I used `int id` → `Long` is better (`null` means not saved yet, and there's no 2.1 billion limit).
 - I wrote `Protected final Account()` → Java keywords are lowercase, and a constructor can't be `final`. The fix is `protected Account() {}`.
@@ -89,10 +98,13 @@ An account that doesn't exist should give 404 Not Found. (Fixed on 23 Oct.)
 - (23 Oct) I used 409 for same-account and 400 for not-found → same-account is 400 (nonsense input), not-found is 404.
 - (23 Oct) I copy-pasted a handler and kept the name `handleInsufficient` → rename copied code so it says what it does.
 - (25 Oct) I read `20 200` from `uniq -c` as "20 × ₹200" → it's *count* then *status code*: 20 responses with status 200.
+- (25 Oct) I put `@Transactional` on the concurrency test → it needs `@SpringBootTest`, and it must *not* be transactional, because the 20 threads must see the test accounts really saved.
+- (25 Oct) I first expected 20 succeeded / 0 rejected and swapped the sender and receiver → 20/0 was the *no-lock* result, and the sender is the one that ends at 0.
+- (25 Oct) I thought the `findById` in the test was the lock → the test only *reads* the result at the end. The lock is in `AccountService`.
 
 ## Next (before the interview on 29 Oct, most interview value first)
 1. ~~Fix the 4 bugs from the code review~~ ✅ done 23 Oct
-2. **Lock test:** ~~20 × ₹100 at once → 10 × 200, 10 × 409, 0.00 / 1500.00~~ ✅ done 23 Oct. ~~Remove the lock and watch transfers vanish~~ ✅ done 25 Oct (20 × 200, only ₹200 moved). Still to do: turn it into a JUnit test.
+2. **Lock test:** ~~20 × ₹100 at once → 10 × 200, 10 × 409, 0.00 / 1500.00~~ ✅ done 23 Oct. ~~Remove the lock and watch transfers vanish~~ ✅ done 25 Oct (20 × 200, only ₹200 moved). ~~Turn it into a JUnit test~~ ✅ done 25 Oct (`TransferConcurrencyTest`).
 3. Idempotency key: a unique column so a double-tap doesn't charge twice.
 4. PostgreSQL in Docker Compose, plus a Dockerfile.
 5. Double-entry ledger table, then Swagger.

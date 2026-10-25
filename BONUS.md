@@ -108,6 +108,21 @@ Short extra points from the lessons. Each one is the kind of thing an interviewe
 - **Reading `sort | uniq -c`:** `20 200` means **count** then **value**: 20 responses with status code 200. It's not ₹200.
 - **VS Code tip:** if a suggestion list pops up while you're typing an annotation, press **Esc**. Pressing Enter can insert a whole snippet method.
 
+## Testing with JUnit
+- **`@SpringBootTest`** starts the whole app, including the database, inside the test. This is an **integration test**: it checks the real lock in a real database, not a fake.
+- **Tools for "many at once":**
+  - `ExecutorService`: a team of worker threads. `submit(...)` gives each one a job.
+  - `CountDownLatch(1)`: a starting gun. Workers wait at `await()` until `countDown()`, so they really start together.
+  - `AtomicInteger`: a counter that's safe with many threads. A plain `int++` can lose counts, the same lost-update bug but in Java memory.
+- **`assertThat(actual).isEqualTo(expected)`:** the brackets hold *your promise*. A failure prints `expected: <promise> but was: <reality>` and the **line number**.
+- **`isEqualByComparingTo("0.00")`** compares BigDecimals using `compareTo`, so `0` and `0.00` count as equal.
+- **Trap: never copy the code's output into the expected value.** Work it out from the rules. If you copy a buggy result (like 20/0 without the lock), the test passes on buggy code.
+- **A test that can't fail proves nothing.** Break the code on purpose once and watch it go red. Mine: no lock → `expected: 10 but was: 20`.
+- **Trap: no `@Transactional` on a multi-thread test.** The worker threads run in their own transactions and can't see accounts the test hasn't committed yet.
+- **`@Autowired` on fields is fine in tests.** JUnit creates the test class, so constructor injection doesn't help there.
+- **Tests should create their own data** (`accountRepository.save(...)`) instead of depending on `data.sql`.
+- **Who runs the tests?** You run `./mvnw test`. **CI** (like GitHub Actions) runs it on every push. `./mvnw package` refuses to build if a test fails.
+
 ## Test data and the H2 console
 - `src/main/resources/data.sql` runs on every start. Because H2 is in memory, the data resets each time.
 - `spring.jpa.defer-datasource-initialization=true` makes `data.sql` run **after** Hibernate creates the tables. Otherwise the INSERTs fail with "table not found".
@@ -120,5 +135,6 @@ Short extra points from the lessons. Each one is the kind of thing an interviewe
 - **Module boundary:** "`TransferService` doesn't ask for `AccountRepository`. It asks `AccountService.getForUpdate(id)` for a locked account, and `AccountService` handles the repository."
 - **Bug story:** "A code review pointed out that my 2-decimal column rounds silently. I reproduced it: a ₹0.005 transfer returned 200 and created 1 paisa. I fixed it with `@Digits`, which is also why payment apps only allow 2 decimals."
 - **Lock story:** "I fired 20 concurrent ₹100 transfers at a ₹1000 account. With the pessimistic lock: 10 succeeded, 10 got 409, and the balances came out at 0 and 1500. Then I removed the lock: all 20 returned 200, but only ₹200 actually moved, because 18 transfers were lost updates. That's exactly the bug the lock prevents."
+- **Test story:** "I turned that into a JUnit integration test: 20 threads start at the same moment using a `CountDownLatch`, and the test expects exactly 10 successes and balances 0 / 1500. I checked that it fails without the lock, so it really protects against the bug."
 - **Honesty:** if the project isn't finished yet, say exactly which parts are done and which are next. Never claim more than you built.
 - **Use your own words**, not AI summaries. Interviewers notice words like "orchestrates" and "deterministic".

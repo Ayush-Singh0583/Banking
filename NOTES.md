@@ -105,7 +105,9 @@ An account that doesn't exist should give 404 Not Found. (Fixed on 23 Oct.)
 ## Next (before the interview on 29 Oct, most interview value first)
 1. ~~Fix the 4 bugs from the code review~~ ✅ done 23 Oct
 2. **Lock test:** ~~20 × ₹100 at once → 10 × 200, 10 × 409, 0.00 / 1500.00~~ ✅ done 23 Oct. ~~Remove the lock and watch transfers vanish~~ ✅ done 25 Oct (20 × 200, only ₹200 moved). ~~Turn it into a JUnit test~~ ✅ done 25 Oct (`TransferConcurrencyTest`).
-3. Idempotency key: a unique column so a double-tap doesn't charge twice.
+3. **Idempotency key (in progress):** a unique column so a retry or double-tap doesn't charge twice.
+   - ✅ 25 Oct: `Transfer` entity (`idempotencyKey` UNIQUE, account ids only, amount, `createdAt`)
+   - Next: `TransferRepository.findByIdempotencyKey` → check the key first in `TransferService` and save a `Transfer` last → read the `Idempotency-Key` header in the controller → curl the same key twice → give each thread its own key in `TransferConcurrencyTest` → two identical requests at the same moment → 409
 4. PostgreSQL in Docker Compose, plus a Dockerfile.
 5. Double-entry ledger table, then Swagger.
 6. JWT / Spring Security, last because it's the hardest. **If it isn't working by 28 Oct, remove it from the resume.**
